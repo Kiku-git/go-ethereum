@@ -1,5 +1,28 @@
 ### Changelog for internal API (ui-api)
 
+### 3.1.0
+
+* Add `ContentType string` to `SignDataRequest` to accommodate the latest EIP-191 and EIP-712 implementations.
+
+### 3.0.0
+
+* Make use of `OnInputRequired(info UserInputRequest)` for obtaining master password during startup
+
+### 2.1.0
+
+* Add `OnInputRequired(info UserInputRequest)` to internal API. This method is used when Clef needs user input, e.g. passwords.
+
+The following structures are used:
+```golang
+       UserInputRequest struct {
+               Prompt     string `json:"prompt"`
+               Title      string `json:"title"`
+               IsPassword bool   `json:"isPassword"`
+       }
+       UserInputResponse struct {
+               Text string `json:"text"`
+       }
+
 ### 2.0.0
 
 * Modify how `call_info` on a transaction is conveyed. New format:

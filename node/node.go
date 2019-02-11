@@ -121,6 +121,29 @@ func New(conf *Config) (*Node, error) {
 	}, nil
 }
 
+// Close stops the Node and releases resources acquired in
+// Node constructor New.
+func (n *Node) Close() error {
+	var errs []error
+
+	// Terminate all subsystems and collect any errors
+	if err := n.Stop(); err != nil && err != ErrNodeStopped {
+		errs = append(errs, err)
+	}
+	if err := n.accman.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	// Report any errors that might have occurred
+	switch len(errs) {
+	case 0:
+		return nil
+	case 1:
+		return errs[0]
+	default:
+		return fmt.Errorf("%v", errs)
+	}
+}
+
 // Register injects a new service into the node's stack. The service created by
 // the passed constructor must be unique in its type with regard to sibling ones.
 func (n *Node) Register(constructor ServiceConstructor) error {
@@ -263,7 +286,7 @@ func (n *Node) startRPC(services map[reflect.Type]Service) error {
 		n.stopInProc()
 		return err
 	}
-	if err := n.startHTTP(n.httpEndpoint, apis, n.config.HTTPModules, n.config.HTTPCors, n.config.HTTPVirtualHosts); err != nil {
+	if err := n.startHTTP(n.httpEndpoint, apis, n.config.HTTPModules, n.config.HTTPCors, n.config.HTTPVirtualHosts, n.config.HTTPTimeouts); err != nil {
 		n.stopIPC()
 		n.stopInProc()
 		return err
@@ -287,7 +310,7 @@ func (n *Node) startInProc(apis []rpc.API) error {
 		if err := handler.RegisterName(api.Namespace, api.Service); err != nil {
 			return err
 		}
-		n.log.Debug("InProc registered", "service", api.Service, "namespace", api.Namespace)
+		n.log.Debug("InProc registered", "namespace", api.Namespace)
 	}
 	n.inprocHandler = handler
 	return nil
@@ -322,7 +345,7 @@ func (n *Node) stopIPC() {
 		n.ipcListener.Close()
 		n.ipcListener = nil
 
-		n.log.Info("IPC endpoint closed", "endpoint", n.ipcEndpoint)
+		n.log.Info("IPC endpoint closed", "url", n.ipcEndpoint)
 	}
 	if n.ipcHandler != nil {
 		n.ipcHandler.Stop()
@@ -331,12 +354,12 @@ func (n *Node) stopIPC() {
 }
 
 // startHTTP initializes and starts the HTTP RPC endpoint.
-func (n *Node) startHTTP(endpoint string, apis []rpc.API, modules []string, cors []string, vhosts []string) error {
+func (n *Node) startHTTP(endpoint string, apis []rpc.API, modules []string, cors []string, vhosts []string, timeouts rpc.HTTPTimeouts) error {
 	// Short circuit if the HTTP endpoint isn't being exposed
 	if endpoint == "" {
 		return nil
 	}
-	listener, handler, err := rpc.StartHTTPEndpoint(endpoint, apis, modules, cors, vhosts)
+	listener, handler, err := rpc.StartHTTPEndpoint(endpoint, apis, modules, cors, vhosts, timeouts)
 	if err != nil {
 		return err
 	}
@@ -549,11 +572,23 @@ func (n *Node) IPCEndpoint() string {
 
 // HTTPEndpoint retrieves the current HTTP endpoint used by the protocol stack.
 func (n *Node) HTTPEndpoint() string {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if n.httpListener != nil {
+		return n.httpListener.Addr().String()
+	}
 	return n.httpEndpoint
 }
 
 // WSEndpoint retrieves the current WS endpoint used by the protocol stack.
 func (n *Node) WSEndpoint() string {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if n.wsListener != nil {
+		return n.wsListener.Addr().String()
+	}
 	return n.wsEndpoint
 }
 
@@ -570,12 +605,12 @@ func (n *Node) OpenDatabase(name string, cache, handles int) (ethdb.Database, er
 	if n.config.DataDir == "" {
 		return ethdb.NewMemDatabase(), nil
 	}
-	return ethdb.NewLDBDatabase(n.config.resolvePath(name), cache, handles)
+	return ethdb.NewLDBDatabase(n.config.ResolvePath(name), cache, handles)
 }
 
 // ResolvePath returns the absolute path of a resource in the instance directory.
 func (n *Node) ResolvePath(x string) string {
-	return n.config.resolvePath(x)
+	return n.config.ResolvePath(x)
 }
 
 // apis returns the collection of RPC descriptors this node offers.

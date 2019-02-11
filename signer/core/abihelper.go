@@ -17,17 +17,16 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-
-	"bytes"
-	"os"
-	"regexp"
 )
 
 type decodedArgument struct {
@@ -43,11 +42,11 @@ type decodedCallData struct {
 // String implements stringer interface, tries to use the underlying value-type
 func (arg decodedArgument) String() string {
 	var value string
-	switch arg.value.(type) {
+	switch val := arg.value.(type) {
 	case fmt.Stringer:
-		value = arg.value.(fmt.Stringer).String()
+		value = val.String()
 	default:
-		value = fmt.Sprintf("%v", arg.value)
+		value = fmt.Sprintf("%v", val)
 	}
 	return fmt.Sprintf("%v: %v", arg.soltype.Type.String(), value)
 }
